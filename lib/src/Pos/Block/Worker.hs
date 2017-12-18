@@ -23,7 +23,6 @@ import           Pos.Block.Configuration (networkDiameter)
 import           Pos.Block.Logic (calcChainQualityFixedTime, calcChainQualityM,
                                   calcOverallChainQuality, createGenesisBlockAndApply,
                                   createMainBlockAndApply, needRecovery)
-import           Pos.Block.Network.Announce (announceBlockOuts)
 import           Pos.Block.Network.Logic (requestTipOuts, triggerRecovery)
 import           Pos.Block.Network.Retrieval (retrievalWorker)
 import           Pos.Block.Slog (scCQFixedMonitorState, scCQOverallMonitorState, scCQkMonitorState,
@@ -81,7 +80,7 @@ blkWorkers keepAliveTimer =
 
 informerWorker :: BlockWorkMode ctx m => (WorkerSpec m, OutSpecs)
 informerWorker =
-    onNewSlotWorker True announceBlockOuts $ \slotId _ ->
+    onNewSlotWorker True mempty $ \slotId _ ->
         recoveryCommGuard "onNewSlot worker, informerWorker" $ do
             tipHeader <- DB.getTipHeader
             logDebug $ sformat ("Our tip header: "%build) tipHeader
@@ -94,7 +93,7 @@ informerWorker =
 -- TODO [CSL-1606] Using 'fork' here is quite bad, it's a temporary solution.
 blkCreatorWorker :: BlockWorkMode ctx m => (WorkerSpec m, OutSpecs)
 blkCreatorWorker =
-    onNewSlotWorker True announceBlockOuts $ \slotId diffusion ->
+    onNewSlotWorker True mempty $ \slotId diffusion ->
         recoveryCommGuard "onNewSlot worker, blkCreatorWorker" $
             void $ fork $
             blockCreator slotId diffusion `catchAny` onBlockCreatorException

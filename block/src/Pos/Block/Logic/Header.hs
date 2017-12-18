@@ -255,17 +255,18 @@ getHeadersFromManyTo ::
        , HasConfiguration
        , HasBlockConfiguration
        )
-    => NonEmpty HeaderHash -- ^ Checkpoints; not guaranteed to be
+    => (HeaderHash -> m (Maybe BlockHeader))
+    -> NonEmpty HeaderHash -- ^ Checkpoints; not guaranteed to be
                            --   in any particular order
     -> Maybe HeaderHash
     -> m (NewestFirst NE BlockHeader)
-getHeadersFromManyTo checkpoints startM = do
+getHeadersFromManyTo getHeader checkpoints startM = do
     logDebug $
         sformat ("getHeadersFromManyTo: "%listJson%", start: "%build)
                 checkpoints startM
     validCheckpoints <- noteM "Failed to retrieve checkpoints" $
         nonEmpty . catMaybes <$>
-        mapM DB.getHeader (toList checkpoints)
+        mapM getHeader (toList checkpoints)
     tip <- GS.getTip
     unless (all ((/= tip) . headerHash) validCheckpoints) $
         throwError "Found checkpoint that is equal to our tip"
@@ -276,7 +277,7 @@ getHeadersFromManyTo checkpoints startM = do
             any (\c -> bh ^. prevBlockL == c ^. headerHashG) validCheckpoints
         whileCond bh = not (isCheckpoint bh)
     headers <- noteM "Failed to load headers by depth" . fmap (_NewestFirst nonEmpty) $
-        DB.loadHeadersByDepthWhile whileCond recoveryHeadersMessage startFrom
+        DB.loadHeadersByDepthWhile getHeaderThrow whileCond recoveryHeadersMessage startFrom
     let newestH = headers ^. _NewestFirst . _neHead
         oldestH = headers ^. _NewestFirst . _neLast
     logDebug $
@@ -293,7 +294,7 @@ getHeadersFromManyTo checkpoints startM = do
         let lowestCheckpoint =
                 maximumBy (comparing getEpochOrSlot) inMainCheckpoints
             loadUpCond _ h = h < recoveryHeadersMessage
-        up <- GS.loadHeadersUpWhile lowestCheckpoint loadUpCond
+        up <- GS.loadHeadersUpWhile getHeader lowestCheckpoint loadUpCond
         res <- note "loadHeadersUpWhile returned empty list" $
             _NewestFirst nonEmpty (toNewestFirst $ over _OldestFirst (drop 1) up)
         logDebug $ "getHeadersFromManyTo: loaded non-empty list of headers, returning"
@@ -301,6 +302,7 @@ getHeadersFromManyTo checkpoints startM = do
   where
     noteM :: (MonadError e n) => e -> n (Maybe a) -> n a
     noteM reason action = note reason =<< action
+    getHeaderThrow hh = getHeader hh >>= maybe (throwError "Header not found") pure
 
 -- | Given a starting point hash (we take tip if it's not in storage)
 -- it returns not more than 'blkSecurityParam' blocks distributed
@@ -360,12 +362,15 @@ getHeadersOlderExp upto = do
 -- than @to@, and valid chain in between can be found, headers in
 -- range @[from..to]@ will be found.
 getHeadersFromToIncl
-    :: forall m. (HasConfiguration, MonadDBRead m)
-    => HeaderHash -> HeaderHash -> m (Maybe (OldestFirst NE HeaderHash))
-getHeadersFromToIncl older newer = runMaybeT . fmap OldestFirst $ do
+    :: forall m. (HasConfiguration, Monad m)
+    => (HeaderHash -> m (Maybe BlockHeader))
+    -> HeaderHash
+    -> HeaderHash
+    -> m (Maybe (OldestFirst NE HeaderHash))
+getHeadersFromToIncl getHeader older newer = runMaybeT . fmap OldestFirst $ do
     -- oldest and newest blocks do exist
-    start <- MaybeT $ DB.getHeader newer
-    end   <- MaybeT $ DB.getHeader older
+    start <- MaybeT $ getHeader newer
+    end   <- MaybeT $ getHeader older
     guard $ getEpochOrSlot start >= getEpochOrSlot end
     let lowerBound = getEpochOrSlot end
     if newer == older
@@ -381,7 +386,7 @@ getHeadersFromToIncl older newer = runMaybeT . fmap OldestFirst $ do
         | nextHash == genesisHash = mzero
         | nextHash == older = pure $ nextHash <| hashes
         | otherwise = do
-            nextHeader <- MaybeT $ DB.getHeader nextHash
+            nextHeader <- MaybeT $ getHeader nextHash
             guard $ getEpochOrSlot nextHeader > lowerBound
             -- hashes are being prepended so the oldest hash will be the last
             -- one to be prepended and thus the order is OldestFirst

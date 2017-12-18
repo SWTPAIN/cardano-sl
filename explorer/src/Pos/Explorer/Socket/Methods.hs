@@ -69,6 +69,7 @@ import           Pos.Core.Block (Block, mainBlockTxPayload)
 import           Pos.Core.Txp (Tx (..), TxOut (..), TxOutAux (..), txOutAddress, txpTxs)
 import           Pos.Crypto (hash, withHash)
 import           Pos.DB.Block (getBlund)
+import           Pos.DB.BlockIndex as DB (getHeader)
 import           Pos.DB.Class (MonadDBRead)
 import           Pos.Explorer.Core (TxExtra (..))
 import qualified Pos.Explorer.DB as DB
@@ -358,7 +359,7 @@ getBlundsFromTo
     :: forall ctx m . ExplorerMode ctx m
     => HeaderHash -> HeaderHash -> m (Maybe [Blund])
 getBlundsFromTo recentBlock oldBlock = do
-    mheaders <- DB.getHeadersFromToIncl oldBlock recentBlock
+    mheaders <- DB.getHeadersFromToIncl DB.getHeader oldBlock recentBlock
     forM (getOldestFirst <$> mheaders) $ \(_ :| headers) ->
         catMaybes <$> forM headers getBlund
 

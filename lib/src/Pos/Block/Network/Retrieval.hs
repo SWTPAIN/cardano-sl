@@ -24,7 +24,6 @@ import           System.Wlog (logDebug, logError, logInfo, logWarning)
 import           Pos.Binary.Class (biSize)
 import           Pos.Block.BlockWorkMode (BlockWorkMode)
 import           Pos.Block.Logic (ClassifyHeaderRes (..), classifyNewHeader)
-import           Pos.Block.Network.Announce (announceBlockOuts)
 import           Pos.Block.Network.Logic (BlockNetLogicException (DialogUnexpected),
                                           MkHeadersRequestResult (..), handleBlocks,
                                           mkHeadersRequest, triggerRecovery)
@@ -48,8 +47,7 @@ retrievalWorker
     => Timer -> (WorkerSpec m, OutSpecs)
 retrievalWorker keepAliveTimer = worker outs (retrievalWorkerImpl keepAliveTimer)
   where
-    outs = announceBlockOuts <>
-           toOutSpecs [convH (Proxy :: Proxy MsgGetBlocks)
+    outs = toOutSpecs [convH (Proxy :: Proxy MsgGetBlocks)
                              (Proxy :: Proxy MsgBlock)
                       ]
 
