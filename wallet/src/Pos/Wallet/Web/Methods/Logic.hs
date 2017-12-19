@@ -186,6 +186,24 @@ getWallets = getWalletAddresses >>= mapM getWallet
 -- Creators
 ----------------------------------------------------------------------------
 
+newAddress_
+    :: MonadWalletWebMode m
+    => AddrGenSeed
+    -> PassPhrase
+    -> AccountId
+    -> m CWAddressMeta
+newAddress_ addGenSeed passphrase accId = do
+    -- check whether account exists
+    parentExists <- WS.doesAccountExist accId
+    unless parentExists $ throwM noAccount
+
+    cwAddrMeta <- genUniqueAddress addGenSeed passphrase accId
+    addWAddress cwAddrMeta
+    return cwAddrMeta
+  where
+    noAccount =
+        RequestError $ sformat ("No account with id "%build%" found") accId
+
 newAddress
     :: MonadWalletWebMode m
     => AddrGenSeed
@@ -194,17 +212,9 @@ newAddress
     -> m CAddress
 newAddress addGenSeed passphrase accId = do
     balAndUtxo <- WS.getWalletBalancesAndUtxo
+    cwAddrMeta <- newAddress_ addGenSeed passphrase accId
     fixCachedAccModifierFor accId $ \accMod -> do
-        -- check whether account exists
-        parentExists <- WS.doesAccountExist accId
-        unless parentExists $ throwM noAccount
-
-        cAccAddr <- genUniqueAddress addGenSeed passphrase accId
-        addWAddress cAccAddr
         getWAddress balAndUtxo accMod cAccAddr
-  where
-    noAccount =
-        RequestError $ sformat ("No account with id "%build%" found") accId
 
 newAccountIncludeUnready
     :: MonadWalletWebMode m
